@@ -50,7 +50,7 @@ Follow these steps to get the VIBE AI Blockchain node running on your local mach
     ```bash
     make 
     mkdir data # make data directory for wallet
-   ./vibe-cli createwallet
+    ./vibe-cli createwallet
     ```
 
 4.  **Run the Node (Example):**
