@@ -57,10 +57,14 @@ tmp/
 .cursor/project_context.json docs/paelladoc/project_context.json
 
 # Database data directories
-# /data/
+/data/
 /two/
 /three/
 /4/
 
 seed1.key
 seed2.key
+vibe_node.key
+
+vibe-cli
+vibe-node
