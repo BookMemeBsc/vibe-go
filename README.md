@@ -48,19 +48,16 @@ Follow these steps to get the VIBE AI Blockchain node running on your local mach
 3.  **Build the Project:**
     Compile the Go code to create the executable.
     ```bash
-   make
-   # Then create a wallet
-   mkdir data # make data directory for wallet
+    make 
+    mkdir data # make data directory for wallet
    ./vibe-cli createwallet
-
-
     ```
 
 4.  **Run the Node (Example):**
     Start a blockchain node. The specific command might depend on the final implementation in `cmd/node`. A typical invocation might look like:
     ```bash
-   # use wallet generated in above command:
-   ./vibe-node -mine -mineraddress <wallet> -port 9001
+    # use wallet generated in above command:
+    ./vibe-node -mine -mineraddress <wallet> -port 9001
     ```
     *(Check the `cmd/node/main.go` or related files for specific command-line arguments if required, e.g., for setting ports or joining a network).*
 
