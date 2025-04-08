@@ -60,7 +60,7 @@ Follow these steps to get the VIBE AI Blockchain node running on your local mach
 
 2.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/cryptoaaron/vibe-go.git # Replace with the actual repo URL
+    git clone https://github.com/BookMemeBsc/vibe-go.git # Replace with the actual repo URL
     cd vibe-go
     ```
 
