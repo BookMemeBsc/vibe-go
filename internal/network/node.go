@@ -34,7 +34,7 @@ import (
 // TODO: Replace these with actual seed node multiaddresses.
 const (
 	SeedNode1 = "/ip4/149.56.169.165/tcp/9001/p2p/12D3KooWETQAujZCiik1Hc3y3i64fZg1VEkGSEEb7cdQyEshaie2" // Example libp2p bootstrap node
-	SeedNode2 = "/ip4/104.236.179.241/tcp/4001/p2p/QmSoLPppuBtQSGwKDZT2M73ULpjvfd3aZ6ha4oFGL1KrGM" // Example libp2p bootstrap node
+	SeedNode2 = "/ip4/198.50.215.62/tcp/9002/p2p/12D3KooWJ2fyPfa1sRwmrMtvDNLSmM752emvauzFkGnPZM1mBLGA" // Example libp2p bootstrap node
 
 	// VibeNetworkRendezvousString is used to find other VIBE nodes in the DHT.
 	VibeNetworkRendezvousString = "/vibe-network/1.0.0"
