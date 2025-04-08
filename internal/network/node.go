@@ -33,7 +33,7 @@ import (
 // SeedNodes defines the initial peers to connect to for bootstrapping the network.
 // TODO: Replace these with actual seed node multiaddresses.
 const (
-	SeedNode1 = "/ip4/127.0.0.1/tcp/9001/p2p/12D3KooWKomUkYEfRZrnbe6mi8M94qjGzf5JfuDdag75yVm8sgri" // Example libp2p bootstrap node
+	SeedNode1 = "/ip4/149.56.169.165/tcp/9001/p2p/12D3KooWETQAujZCiik1Hc3y3i64fZg1VEkGSEEb7cdQyEshaie2" // Example libp2p bootstrap node
 	SeedNode2 = "/ip4/104.236.179.241/tcp/4001/p2p/QmSoLPppuBtQSGwKDZT2M73ULpjvfd3aZ6ha4oFGL1KrGM" // Example libp2p bootstrap node
 
 	// VibeNetworkRendezvousString is used to find other VIBE nodes in the DHT.
