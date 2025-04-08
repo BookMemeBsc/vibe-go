@@ -1,0 +1,75 @@
+---
+description: When user executes any PAELLADOC command or asks about available commands, provide guidance on command usage and parameters
+globs: **/*.sh, **/*.py, **/*.js
+---
+
+# PAELLADOC Commands
+
+## Available Commands
+
+### PAELLA
+Initiates the documentation process and generates Cursor rules
+
+Arguments:
+- project_name (string, optional): Name of the project to document
+- project_type (string): Type of project (frontend, backend, chrome_extension, fullstack, mobile_app)
+- methodologies (comma-separated): Development methodologies (tdd, github_workflow)
+- git_workflow (string): Git workflow style (github_flow, gitflow, trunk_based, no_workflow)
+- generate_rules (boolean): Whether to generate Cursor rules from documentation
+- ai_mode (string): AI operation mode (autonomous, collaborative, advisory)
+- -help (flag): Display help information
+
+### HELP
+Displays help information about available PAELLADOC commands
+
+Arguments:
+- command (string, optional): Specific command to get help for
+- format (string): Output format (detailed, summary, examples)
+
+### CONTINUE
+Continues with an existing project documentation
+
+Arguments:
+- project_name (string, required): Name of the project to continue with
+- update_rules (boolean): Whether to update Cursor rules from documentation
+- sync_templates (boolean): Whether to synchronize templates with current state
+
+### ACHIEVEMENT
+Records an achievement in the project memory
+
+Arguments:
+- description (string, required): Description of the achievement
+- category (string, required): Category (architecture, development, documentation, testing, security, performance, product, design, research)
+- impact_level (string): Level of impact (high, medium, low)
+
+### ISSUE
+Records an issue in the project memory
+
+Arguments:
+- description (string, required): Description of the issue
+- severity (string, required): Severity level (critical, high, medium, low)
+- area (string, required): Area affected (product, technical, process, security, performance)
+
+### DECISION
+Records a technical decision in the project memory
+
+Arguments:
+- description (string, required): Description of the decision
+- impact (comma-separated): Areas impacted (architecture, development, documentation, testing, security, performance, product, design, process)
+- rationale (string, required): Reasoning behind the decision
+
+### MEMORY
+Shows the development record
+
+Arguments:
+- filter (string): Filter memory by category (all, achievements, issues, decisions, product, technical)
+- format (string): Output format (detailed, summary, timeline)
+
+### CODING_STYLE
+Manages programming style guides for the project
+
+Arguments:
+- operation (string, required): Style operation (apply, customize, list, show)
+- style_name (string, required): Name of the style (frontend, backend, chrome_extension, tdd, github_workflow)
+- project_name (string, required): Name of the project to apply style to
+- customizations (string): Path to customization file or inline JSON customizations

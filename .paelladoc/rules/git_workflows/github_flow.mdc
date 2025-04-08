@@ -1,0 +1,37 @@
+# PAELLADOC Rule: GitHub Flow (`github_flow.mdc`)
+
+## Description
+Defines the branching strategy and workflow based on GitHub Flow. This lightweight workflow is suitable for projects with continuous deployment.
+
+## Rule Activation
+- **Keywords:** `git`, `branch`, `merge`, `pull request`, `deploy`, `github flow`
+
+## Workflow Principles
+
+1.  **`main` is Deployable:** Anything in the `main` branch is deployable (or deployed).
+2.  **Feature Branches:** Create descriptive branches off `main` for new work (e.g., `feat/add-user-auth`, `fix/resolve-login-bug`).
+    - Naming Convention: Use prefixes like `feat/`, `fix/`, `chore/`, `refactor/`, `docs/`.
+3.  **Commit Locally:** Commit changes to your local feature branch regularly with clear, concise messages.
+4.  **Push Regularly:** Push your local branch to the remote repository frequently.
+5.  **Open Pull Request (PR):** When ready for feedback or merging, open a Pull Request from your feature branch to `main`.
+    - **PR Description:** Clearly describe the changes, the problem solved, and how to test.
+    - **Link Issues:** Link relevant issues (e.g., `Closes #123`).
+    - **Reviewers:** Request reviews from relevant team members.
+6.  **Discuss & Review:** Collaborate on the PR through comments and code reviews. Push further commits to the branch based on feedback.
+7.  **Deploy (Optional):** Ideally, branches are deployed to a staging/testing environment automatically upon PR creation or update for review.
+8.  **Merge:** Once the PR is approved and passes checks (CI tests, linting):
+    - Merge the feature branch into `main` using a merge commit (default) or squash merge (if preferred for a cleaner history). **Do not rebase `main` onto feature branches.**
+    - Delete the feature branch after merging.
+9.  **Deploy `main`:** `main` can be deployed immediately after merging.
+
+## Key Practices
+
+- **Small, Focused PRs:** Keep pull requests small and focused on a single feature or fix.
+- **CI/CD:** Implement Continuous Integration (CI) checks on PRs (build, lint, test). Continuous Deployment (CD) from `main` is recommended.
+- **Branch Protection:** Protect the `main` branch: require PR reviews, require status checks to pass before merging.
+- **Regular `git pull`:** Keep your local `main` branch up-to-date (`git checkout main && git pull origin main`). Rebase your feature branch onto the latest `main` frequently (`git checkout feat/my-feature && git rebase main`) to avoid large merge conflicts, *before* opening the PR or when resolving conflicts.
+
+## Enforcement
+- **Branch Protection Rules:** Configure in GitHub repository settings.
+- **CI Checks:** Set up GitHub Actions or similar CI tools.
+- **Code Reviews:** Mandatory code reviews for all PRs targeting `main`. 
