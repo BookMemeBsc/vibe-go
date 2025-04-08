@@ -31,6 +31,25 @@ The VIBE AI Blockchain implements several core blockchain concepts:
 *   **Blockchain Iteration:** Provides an iterator for traversing blocks from the tip backwards.
 *   **Core Functions:** Includes functions for adding blocks, finding transactions, calculating balances, and finding spendable outputs.
 
+## 🪙 Tokenomics (VIBE)
+
+The VIBE token is the native cryptocurrency of the VIBE AI Blockchain. Here's a breakdown of its economic model:
+
+*   **Smallest Unit:** 1 VIBE is divisible into 100,000,000 smallest units (similar to Satoshis for Bitcoin).
+    *   `VibeSmallestUnit = 100000000`
+*   **Initial Block Reward:** The reward for mining a new block starts at 1 VIBE.
+    *   `InitialBlockReward = 1 * VibeSmallestUnit`
+*   **Halving Schedule:** The block reward is halved approximately every 4 years. This is based on the target block time and the halving interval.
+    *   `targetBlockTimeSeconds = 10` (Target time between blocks)
+    *   `blockRewardHalvingInterval = 12600000` (Blocks before reward halves)
+    *   Calculation: (12,600,000 blocks * 10 seconds/block) / (3600 seconds/hour * 24 hours/day * 365 days/year) ≈ 3.995 years.
+*   **Total Supply:** Due to the halving schedule, the total supply of VIBE will asymptotically approach **25,200,000 VIBE**.
+    *   This is calculated as `(InitialBlockReward * blockRewardHalvingInterval * 2) / VibeSmallestUnit`.
+*   **Issuance:** New VIBE tokens are introduced into the ecosystem solely through mining rewards (coinbase transactions) as part of the Proof-of-Work consensus.
+*   **Utility:** (Placeholder - Define the intended uses for VIBE tokens, e.g., transaction fees, staking, governance, interacting with AI features, etc.)
+
+This model is designed to be deflationary over time, rewarding early participants while ensuring a finite and predictable supply.
+
 ## 🏁 Getting Started
 
 Follow these steps to get the VIBE AI Blockchain node running on your local machine.
