@@ -57,7 +57,7 @@ tmp/
 .cursor/project_context.json docs/paelladoc/project_context.json
 
 # Database data directories
-/data/
+# /data/
 /two/
 /three/
 /4/
