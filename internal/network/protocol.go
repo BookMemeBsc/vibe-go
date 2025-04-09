@@ -41,12 +41,14 @@ type BaseMessage struct {
 // GetBlocksRequest asks a peer for blocks starting after a specific hash.
 // If FromHash is empty, it requests blocks from genesis.
 type GetBlocksRequest struct {
-	FromHash []byte // Hash of the last block the requester has
+	FromHash  []byte // Hash of the last block the requester has
+	MaxBlocks int    // Maximum number of blocks to return in one response
 }
 
 // BlocksResponse sends blocks to a requesting peer.
 type BlocksResponse struct {
-	Blocks []*core.Block
+	Blocks              []*core.Block
+	MoreBlocksAvailable bool // True if the sender has more blocks after the ones sent
 }
 
 // InvBlock announces the inventory (hash) of a new block.

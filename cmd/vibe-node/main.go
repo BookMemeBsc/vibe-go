@@ -14,8 +14,6 @@ import (
 	"vibe-ai/internal/wallet"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
 )
 
 // loadOrCreateIdentity loads a private key from path, or creates one if not found.
@@ -95,47 +93,29 @@ func main() {
 
 	node.Start() // Register handlers and start background tasks
 
+	// Manually connect to a specific peer if requested (useful for testing/initial bootstrap)
+	if *connectAddr != "" {
+		err = node.ConnectToPeer(*connectAddr)
+		if err != nil {
+			// Log warning, but don't block startup, discovery might find others
+			log.Printf("WARN: Failed to connect to specified peer %s: %v", *connectAddr, err)
+		} else {
+			log.Printf("Successfully connected to specified peer %s", *connectAddr)
+		}
+		// Note: Syncing will be handled by TriggerInitialSync and inventory messages
+	}
+
+	// Trigger the initial sync process after starting the node and potentially connecting
+	go node.TriggerInitialSync() // Run in a goroutine so it doesn't block startup
+
 	// --- Start Mining (if enabled) ---
 	if *mine {
 		minerPubKeyHash, err := wallet.Base58Decode(*minerAddr)
 		if err != nil {
 			log.Fatalf("Invalid miner address format (expected Base58): %v", err)
 		}
+		log.Printf("Starting mining to address: %s", *minerAddr)
 		node.StartMining(minerPubKeyHash)
-	}
-
-	// Connect to an initial peer if specified
-	if *connectAddr != "" {
-		err = node.ConnectToPeer(*connectAddr)
-		if err != nil {
-			log.Printf("Failed to connect to initial peer %s: %v", *connectAddr, err)
-		} else {
-			// Extract peer ID for block request
-			peerMA, _ := multiaddr.NewMultiaddr(*connectAddr)
-			peerInfo, _ := peer.AddrInfoFromP2pAddr(peerMA)
-
-			// Get our current latest block hash
-			myLastHash, err := node.Blockchain.GetLastBlockHashBytes()
-			if err != nil {
-				log.Printf("Failed to get own last block hash for sync request: %v", err)
-			} else {
-				log.Printf("Requesting blocks from peer %s after block %x", peerInfo.ID, myLastHash)
-				receivedBlocks, err := node.RequestBlocks(peerInfo.ID, myLastHash)
-				if err != nil {
-					log.Printf("Error requesting blocks from peer %s: %v", peerInfo.ID, err)
-				} else {
-					// Process received blocks
-					log.Printf("Processing %d received blocks...", len(receivedBlocks))
-					for _, block := range receivedBlocks {
-						err := node.Blockchain.AddBlock(block) // Use node.Blockchain
-						if err != nil {
-							log.Printf("Failed to add received block %x (Height: %d): %v", block.Hash, block.Height, err)
-							break
-						}
-					}
-				}
-			}
-		}
 	}
 
 	log.Println("Node is running. Press Ctrl+C to exit.")

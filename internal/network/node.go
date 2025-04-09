@@ -34,14 +34,18 @@ import (
 // TODO: Replace these with actual seed node multiaddresses.
 const (
 	SeedNode1 = "/ip4/149.56.169.165/tcp/9001/p2p/12D3KooWETQAujZCiik1Hc3y3i64fZg1VEkGSEEb7cdQyEshaie2" // Example libp2p bootstrap node
-	SeedNode2 = "/ip4/198.50.215.62/tcp/9002/p2p/12D3KooWJ2fyPfa1sRwmrMtvDNLSmM752emvauzFkGnPZM1mBLGA" // Example libp2p bootstrap node
+	SeedNode2 = "/ip4/198.50.215.62/tcp/9002/p2p/12D3KooWJ2fyPfa1sRwmrMtvDNLSmM752emvauzFkGnPZM1mBLGA"  // Example libp2p bootstrap node
 
-	// VibeNetworkRendezvousString is used to find other VIBE nodes in the DHT.
-	VibeNetworkRendezvousString = "/vibe-network/1.0.0"
+	// VibeNetworkRendezvousString is a unique string used for peer discovery within the DHT.
+	VibeNetworkRendezvousString = "vibe-network-rendezvous-v1"
+
+	// MaxBlocksPerSyncResponse defines the maximum number of blocks a node will
+	// send in a single BlocksResponse message during synchronization.
+	MaxBlocksPerSyncResponse = 500
 
 	// Connection Manager Settings
-	ConnManagerLowWater    = 20
-	ConnManagerHighWater   = 50
+	ConnManagerLowWater    = 20  // Minimum number of connections to maintain
+	ConnManagerHighWater   = 100 // Maximum number of connections before pruning
 	ConnManagerGracePeriod = time.Minute
 )
 
@@ -262,28 +266,60 @@ func (n *Node) TriggerInitialSync() {
 
 		go func() {
 			// Run sync in a goroutine to avoid blocking BootstrapConnect
-			receivedBlocks, err := n.RequestBlocks(syncPeer, lastHash)
-			if err != nil {
-				log.Printf("Initial block sync request to %s failed: %v", syncPeer, err)
-				return
-			}
-			if len(receivedBlocks) > 0 {
-				log.Printf("Initial sync: Received %d blocks from %s. Adding to chain...", len(receivedBlocks), syncPeer)
-				added := 0
+			currentLastHash := lastHash
+			totalBlocksAdded := 0
+
+			for {
+				log.Printf("Initial sync: Requesting blocks after %x from %s", currentLastHash, syncPeer)
+				receivedBlocks, moreAvailable, err := n.RequestBlocks(syncPeer, currentLastHash)
+				if err != nil {
+					log.Printf("Initial sync request to %s failed: %v", syncPeer, err)
+					break // Stop sync loop on error
+				}
+
+				if len(receivedBlocks) == 0 {
+					if !moreAvailable {
+						log.Printf("Initial sync: Received 0 blocks from %s and no more available. Sync complete or peer has no new blocks.", syncPeer)
+					} else {
+						log.Printf("Initial sync: Received 0 blocks from %s but more are available? Potentially lagging peer. Will retry later.", syncPeer)
+					}
+					break // Stop sync loop
+				}
+
+				log.Printf("Initial sync: Received %d blocks from %s (MoreAvailable: %v). Adding to chain...", len(receivedBlocks), syncPeer, moreAvailable)
+				addedInBatch := 0
+				lastBlockInBatch := receivedBlocks[len(receivedBlocks)-1]
 				for _, block := range receivedBlocks {
 					err := n.Blockchain.AddBlock(block)
 					if err != nil {
 						log.Printf("Initial sync: Failed to add block %x (Height: %d): %v", block.Hash, block.Height, err)
-						// Stop processing on error during initial sync
+						// Stop processing this batch and the entire sync on error
+						moreAvailable = false // Ensure we stop the outer loop
 						break
 					} else {
-						added++
+						addedInBatch++
 					}
 				}
-				log.Printf("Initial sync: Finished processing received blocks. Added: %d", added)
-			} else {
-				log.Printf("Initial sync: Received 0 blocks from %s. Already up-to-date?", syncPeer)
+				totalBlocksAdded += addedInBatch
+				log.Printf("Initial sync: Processed batch, added %d blocks.", addedInBatch)
+
+				if !moreAvailable {
+					log.Printf("Initial sync: No more blocks available from %s.", syncPeer)
+					break // Exit sync loop
+				}
+
+				// If more are available, update the hash for the next request
+				currentLastHash = lastBlockInBatch.Hash
+
+				// Add a small delay or check context cancellation?
+				select {
+				case <-n.ctx.Done():
+					log.Println("Initial sync cancelled.")
+					return
+				case <-time.After(100 * time.Millisecond): // Brief pause before next request
+				}
 			}
+			log.Printf("Initial sync process finished. Total blocks added: %d", totalBlocksAdded)
 		}()
 	} else {
 		log.Println("Initial sync: Could not find a suitable peer to sync with.")
@@ -389,58 +425,112 @@ func (n *Node) DiscoverPeers() {
 // HandleBlockSyncStream handles incoming block sync requests.
 func (n *Node) HandleBlockSyncStream(stream network.Stream) {
 	bc := n.Blockchain
-	log.Printf("Got a new block sync stream from %s", stream.Conn().RemotePeer())
+	remotePeer := stream.Conn().RemotePeer() // Get remote peer ID early
+	log.Printf("Got a new block sync stream from %s", remotePeer)
 	defer stream.Close()
+
 	rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
 	decoder := gob.NewDecoder(rw)
 	encoder := gob.NewEncoder(rw)
+
 	var req GetBlocksRequest
 	err := decoder.Decode(&req)
 	if err != nil {
-		// ... (error handling) ...
+		if err == io.EOF {
+			log.Printf("Block sync stream from %s closed before request received.", remotePeer)
+		} else {
+			log.Printf("Error decoding GetBlocksRequest from %s: %v", remotePeer, err)
+		}
 		return
 	}
-	log.Printf("Received GetBlocksRequest from %s, requesting blocks after hash: %x", stream.Conn().RemotePeer(), req.FromHash)
-	blocksToSend := []*core.Block{}
+
+	maxBlocksToSend := req.MaxBlocks
+	if maxBlocksToSend <= 0 || maxBlocksToSend > MaxBlocksPerSyncResponse { // Use a defined constant or reasonable default
+		maxBlocksToSend = MaxBlocksPerSyncResponse // e.g., 500
+	}
+	log.Printf("Received GetBlocksRequest from %s, requesting blocks after hash: %x (max: %d)", remotePeer, req.FromHash, maxBlocksToSend)
+
+	blocksToSend := make([]*core.Block, 0, maxBlocksToSend) // Pre-allocate slice
+	moreAvailable := false
 	lastKnownHash := req.FromHash
+
 	currentTipHash, err := bc.GetLastBlockHashBytes()
-	if err != nil { /* ... */
+	if err != nil {
+		log.Printf("Error getting last block hash for %s: %v", remotePeer, err)
+		// Consider sending an error response or just closing
 		return
 	}
-	if bytes.Equal(lastKnownHash, currentTipHash) { /* ... send empty ... */
+
+	// If the peer's last known hash is our current tip, they are up-to-date
+	if bytes.Equal(lastKnownHash, currentTipHash) {
+		log.Printf("Peer %s is already up-to-date (tip: %x). Sending empty response.", remotePeer, currentTipHash)
+		resp := BlocksResponse{Blocks: []*core.Block{}, MoreBlocksAvailable: false}
+		err = encoder.Encode(resp)
+		if err != nil {
+			log.Printf("Error encoding empty BlocksResponse to %s: %v", remotePeer, err)
+		} else {
+			err = rw.Flush()
+			if err != nil {
+				log.Printf("Error flushing empty BlocksResponse to %s: %v", remotePeer, err)
+			}
+		}
 		return
 	}
-	iter := bc.NewIteratorStartingFrom(currentTipHash)
-	for {
-		block, err := iter.Next()
-		if err != nil { /* ... */
-			break
+
+	iter := bc.NewIteratorStartingFrom(currentTipHash) // Start from our tip
+
+	foundAncestor := false
+	for len(blocksToSend) < maxBlocksToSend {
+		block, err := iter.Next() // Iterates backwards
+		if err != nil {
+			log.Printf("Error iterating blockchain for %s: %v", remotePeer, err)
+			break // Stop processing on iterator error
 		}
 		if block == nil {
+			// Reached the end of iteration (should theoretically hit genesis)
+			log.Printf("Iterator reached end unexpectedly for %s request.", remotePeer)
 			break
 		}
-		blocksToSend = append([]*core.Block{block}, blocksToSend...)
+
+		// Stop if we reach the block the peer already has
 		if bytes.Equal(block.Hash, lastKnownHash) {
-			// Remove common ancestor
-			if len(blocksToSend) > 0 {
-				blocksToSend = blocksToSend[1:]
-			}
+			foundAncestor = true
 			break
 		}
-		if len(block.PrevBlockHash) == 0 { /* ... break */
+
+		// Add block to the list (prepended to maintain order)
+		blocksToSend = append([]*core.Block{block}, blocksToSend...)
+
+		// Stop if we reach the genesis block (unless it's the requested ancestor)
+		if len(block.PrevBlockHash) == 0 {
 			break
 		}
 	}
-	resp := BlocksResponse{Blocks: blocksToSend}
+
+	// Check if there are more blocks *after* the ones we collected but *before* the ancestor
+	if !foundAncestor && len(blocksToSend) == maxBlocksToSend {
+		// If we hit the limit and haven't found the ancestor/genesis, there must be more blocks
+		// We need to check if the *next* block in the iteration exists and isn't the ancestor
+		peekBlock, peekErr := iter.Next()
+		if peekErr == nil && peekBlock != nil && !bytes.Equal(peekBlock.Hash, lastKnownHash) {
+			moreAvailable = true
+		} else if peekErr != nil {
+			log.Printf("Error peeking next block for %s: %v", remotePeer, peekErr)
+		}
+	}
+
+	resp := BlocksResponse{Blocks: blocksToSend, MoreBlocksAvailable: moreAvailable}
 	err = encoder.Encode(resp)
-	if err != nil { /* ... */
-		return
+	if err != nil {
+		log.Printf("Error encoding BlocksResponse to %s: %v", remotePeer, err)
+		return // Don't try to flush if encode failed
 	}
 	err = rw.Flush()
-	if err != nil { /* ... */
+	if err != nil {
+		log.Printf("Error flushing BlocksResponse to %s: %v", remotePeer, err)
 		return
 	}
-	log.Printf("Sent %d blocks to %s", len(blocksToSend), stream.Conn().RemotePeer())
+	log.Printf("Sent %d blocks to %s (MoreAvailable: %v)", len(blocksToSend), remotePeer, moreAvailable)
 }
 
 // HandleInventoryStream handles incoming inventory announcements.
@@ -502,40 +592,62 @@ func (n *Node) handleInvBlock(inv InvBlock, remotePeer peer.ID) {
 	}
 
 	// --- Request the missing block(s) ---
-	myLastHash, err := bc.GetLastBlockHashBytes()
-	if err != nil {
-		log.Printf("Error getting own last block hash to request block %x: %v", inv.Hash, err)
-		return
-	}
+	// This now happens in a loop until caught up or error
+	go func() { // Run in goroutine to avoid blocking HandleInventoryStream
+		totalBlocksAdded := 0
+		for {
+			myLastHash, err := bc.GetLastBlockHashBytes()
+			if err != nil {
+				log.Printf("handleInvBlock: Error getting own last block hash to request block %x: %v", inv.Hash, err)
+				return // Stop sync on error
+			}
 
-	// Use the Node's context for the request
-	receivedBlocks, err := n.RequestBlocks(remotePeer, myLastHash) // Call the method on n
-	if err != nil {
-		log.Printf("Error requesting blocks (after %x) from peer %s (triggered by inv %x): %v",
-			myLastHash, remotePeer, inv.Hash, err)
-		return
-	}
+			log.Printf("handleInvBlock: Requesting blocks after %x from %s (triggered by inv %x)", myLastHash, remotePeer, inv.Hash)
+			receivedBlocks, moreAvailable, err := n.RequestBlocks(remotePeer, myLastHash)
+			if err != nil {
+				log.Printf("handleInvBlock: Error requesting blocks (after %x) from peer %s (triggered by inv %x): %v",
+					myLastHash, remotePeer, inv.Hash, err)
+				return // Stop sync on error
+			}
 
-	// --- Process received blocks ---
-	if len(receivedBlocks) == 0 {
-		log.Printf("Received 0 blocks from %s after inventory announcement %x.", remotePeer, inv.Hash)
-		return
-	}
+			if len(receivedBlocks) == 0 {
+				if !moreAvailable {
+					log.Printf("handleInvBlock: Received 0 blocks from %s and no more available.", remotePeer)
+				} else {
+					log.Printf("handleInvBlock: Received 0 blocks from %s but more are available? Retrying later might be needed.", remotePeer)
+				}
+				break // Stop sync loop
+			}
 
-	log.Printf("Processing %d received blocks triggered by inventory announcement...", len(receivedBlocks))
-	added := 0
-	for _, block := range receivedBlocks {
-		err := bc.AddBlock(block) // Rely on AddBlock for all logic
-		if err != nil {
-			log.Printf("Failed to add received block %x (Height: %d) from inventory request: %v", block.Hash, block.Height, err)
-			// Consider breaking only on critical errors, maybe continue on simple validation?
-			// For now, let's break on any error during sync.
-			break
-		} else {
-			added++ // Increment even if AddBlock decided not to store it but returned no error
+			log.Printf("handleInvBlock: Processing %d received blocks triggered by inventory announcement...", len(receivedBlocks))
+			addedInBatch := 0
+			for _, block := range receivedBlocks {
+				err := bc.AddBlock(block) // Rely on AddBlock for all logic
+				if err != nil {
+					log.Printf("handleInvBlock: Failed to add received block %x (Height: %d): %v", block.Hash, block.Height, err)
+					moreAvailable = false // Stop sync loop on error adding block
+					break
+				} else {
+					addedInBatch++
+				}
+			}
+			totalBlocksAdded += addedInBatch
+			log.Printf("handleInvBlock: Finished processing batch. Added: %d", addedInBatch)
+
+			if !moreAvailable {
+				log.Printf("handleInvBlock: No more blocks available from %s.", remotePeer)
+				break // Exit sync loop
+			}
+			// Small delay before next request in loop
+			select {
+			case <-n.ctx.Done():
+				log.Println("handleInvBlock sync cancelled.")
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
 		}
-	}
-	log.Printf("Finished processing received blocks. Added: %d", added) // This count might be misleading now, shows blocks *processed* without error
+		log.Printf("handleInvBlock: Finished sync process triggered by inv %x. Total blocks added: %d", inv.Hash, totalBlocksAdded)
+	}()
 }
 
 // handleInvTx processes a received InvTx message.
@@ -755,28 +867,31 @@ func (n *Node) ConnectToPeer(peerAddr string) error {
 }
 
 // RequestBlocks opens a stream to a peer, sends a GetBlocksRequest, and handles the response.
-// Changed receiver to *Node
-func (n *Node) RequestBlocks(peerID peer.ID, fromHash []byte) ([]*core.Block, error) {
+// It now returns the received blocks and a flag indicating if more blocks are available.
+func (n *Node) RequestBlocks(peerID peer.ID, fromHash []byte) ([]*core.Block, bool, error) {
 	log.Printf("Opening stream to peer %s for protocol %s", peerID, BlockSyncProtocolID)
 	stream, err := n.Host.NewStream(n.ctx, peerID, BlockSyncProtocolID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open new stream to peer %s: %w", peerID, err)
+		return nil, false, fmt.Errorf("failed to open new stream to peer %s: %w", peerID, err)
 	}
 	defer stream.Close()
 
 	// Send the request
-	req := GetBlocksRequest{FromHash: fromHash}
+	req := GetBlocksRequest{
+		FromHash:  fromHash,
+		MaxBlocks: MaxBlocksPerSyncResponse, // Use the constant defined earlier
+	}
 	rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
 	encoder := gob.NewEncoder(rw)
 
-	log.Printf("Sending GetBlocksRequest (FromHash: %x) to %s", fromHash, peerID)
+	log.Printf("Sending GetBlocksRequest (FromHash: %x, Max: %d) to %s", fromHash, req.MaxBlocks, peerID)
 	err = encoder.Encode(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode GetBlocksRequest to peer %s: %w", peerID, err)
+		return nil, false, fmt.Errorf("failed to encode GetBlocksRequest to peer %s: %w", peerID, err)
 	}
 	err = rw.Flush()
 	if err != nil {
-		return nil, fmt.Errorf("failed to flush request buffer to peer %s: %w", peerID, err)
+		return nil, false, fmt.Errorf("failed to flush request buffer to peer %s: %w", peerID, err)
 	}
 
 	// Read the response
@@ -786,15 +901,15 @@ func (n *Node) RequestBlocks(peerID peer.ID, fromHash []byte) ([]*core.Block, er
 	if err != nil {
 		if err == io.EOF {
 			log.Printf("Peer %s closed stream after request, potentially no blocks to send.", peerID)
-			// Return empty list, not an error
-			return []*core.Block{}, nil
+			// Return empty list, not an error, and assume no more blocks
+			return []*core.Block{}, false, nil
 		} else {
-			return nil, fmt.Errorf("failed to decode BlocksResponse from peer %s: %w", peerID, err)
+			return nil, false, fmt.Errorf("failed to decode BlocksResponse from peer %s: %w", peerID, err)
 		}
 	}
 
-	log.Printf("Received %d blocks from peer %s", len(resp.Blocks), peerID)
-	return resp.Blocks, nil
+	log.Printf("Received %d blocks from peer %s (MoreAvailable: %v)", len(resp.Blocks), peerID, resp.MoreBlocksAvailable)
+	return resp.Blocks, resp.MoreBlocksAvailable, nil
 }
 
 // BroadcastMessage sends a message to all connected peers using the specified protocol ID.
